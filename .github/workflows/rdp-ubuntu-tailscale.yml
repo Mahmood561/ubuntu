@@ -9,11 +9,11 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Install XRDP + lightweight desktop
+      - name: Install Ubuntu Desktop + XRDP
         run: |
           sudo apt update
-          sudo apt install -y -qq xrdp xorgxrdp lxde-core lxde-common tigervnc-standalone-server
-          echo "startlxde" > ~/.xsession
+          sudo apt install -y -qq ubuntu-desktop-minimal xrdp xorgxrdp
+          echo "gnome-session" > ~/.xsession
 
       - name: Create RDP user
         run: |
@@ -23,13 +23,17 @@ jobs:
           sudo usermod -aG sudo rdp
           echo "RDP_PASS=$PASS" >> $GITHUB_ENV
 
+      - name: Configure XRDP for GNOME
+        run: |
+          sudo sed -i 's/^exec .*$/exec gnome-session/' /etc/xrdp/startwm.sh
+
       - name: Start XRDP
         run: |
           sudo systemctl enable xrdp
           sudo systemctl restart xrdp
           sudo systemctl restart xrdp-sesman
           sleep 3
-          ss -tlnp | grep 3389 || (echo "XRDP not listening on 3389" && sudo systemctl status xrdp && exit 1)
+          ss -tlnp | grep 3389 || (echo "XRDP not listening on 3389" && exit 1)
 
       - name: Install Tailscale
         run: |
@@ -49,7 +53,6 @@ jobs:
 
           if [ -z "$TSIP" ]; then
             echo "Tailscale IP not assigned"
-            sudo tailscale status || true
             exit 1
           fi
 
