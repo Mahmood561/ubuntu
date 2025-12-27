@@ -1,4 +1,4 @@
-name: Ubuntu RDP (Tailscale)
+name: Ubuntu RDP (GNOME Optimized)
 
 on:
   workflow_dispatch:
@@ -9,11 +9,24 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Install Ubuntu Desktop + XRDP
+      - name: Prepare apt (speed)
+        run: |
+          sudo rm -rf /var/lib/apt/lists/*
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries
+          echo 'Acquire::http::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-timeout
+
+      - name: Install minimal GNOME + XRDP
         run: |
           sudo apt update
-          sudo apt install -y -qq ubuntu-desktop-minimal xrdp xorgxrdp
+          sudo apt install -y --no-install-recommends \
+            gnome-session gnome-shell gnome-terminal nautilus \
+            xrdp xorgxrdp \
+            gdm3 xwayland dbus-x11
+
+      - name: Configure session
+        run: |
           echo "gnome-session" > ~/.xsession
+          sudo sed -i 's/^exec .*$/exec gnome-session/' /etc/xrdp/startwm.sh
 
       - name: Create RDP user
         run: |
@@ -23,17 +36,12 @@ jobs:
           sudo usermod -aG sudo rdp
           echo "RDP_PASS=$PASS" >> $GITHUB_ENV
 
-      - name: Configure XRDP for GNOME
-        run: |
-          sudo sed -i 's/^exec .*$/exec gnome-session/' /etc/xrdp/startwm.sh
-
       - name: Start XRDP
         run: |
-          sudo systemctl enable xrdp
           sudo systemctl restart xrdp
           sudo systemctl restart xrdp-sesman
           sleep 3
-          ss -tlnp | grep 3389 || (echo "XRDP not listening on 3389" && exit 1)
+          ss -tlnp | grep 3389 || exit 1
 
       - name: Install Tailscale
         run: |
@@ -41,32 +49,15 @@ jobs:
 
       - name: Connect to Tailscale
         run: |
-          sudo tailscale up \
-            --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" \
-            --hostname="gh-ubuntu-${{ github.run_id }}"
-
-          for i in {1..12}; do
-            TSIP=$(tailscale ip -4 | head -n 1)
-            [ -n "$TSIP" ] && break
-            sleep 5
-          done
-
-          if [ -z "$TSIP" ]; then
-            echo "Tailscale IP not assigned"
-            exit 1
-          fi
-
+          sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="gh-gnome-${{ github.run_id }}"
+          for i in {1..12}; do TSIP=$(tailscale ip -4); [ -n "$TSIP" ] && break; sleep 5; done
           echo "TAILSCALE_IP=$TSIP" >> $GITHUB_ENV
 
       - name: Show access info
         run: |
-          echo ""
-          echo "==== RDP ACCESS (TAILSCALE) ===="
-          echo "Address:  $TAILSCALE_IP"
+          echo "Address: $TAILSCALE_IP"
           echo "Username: rdp"
           echo "Password: $RDP_PASS"
-          echo "================================"
-          echo ""
 
       - name: Keep alive
         run: |
