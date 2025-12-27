@@ -1,0 +1,77 @@
+name: RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3600
+
+    steps:
+      - name: Update system
+        run: |
+          sudo apt update && sudo apt upgrade -y
+
+      - name: Install XRDP and desktop environment
+        run: |
+          sudo apt install -y xrdp xfce4 xfce4-goodies
+          echo "startxfce4" | sudo tee /home/rdp/.xsession
+
+      - name: Create RDP user with secure password
+        run: |
+          PASSWORD=$(openssl rand -base64 16)
+          sudo useradd -m -s /bin/bash rdp
+          echo "rdp:$PASSWORD" | sudo chpasswd
+          sudo usermod -aG sudo rdp
+          echo "RDP_CREDS=User: rdp | Password: $PASSWORD" >> $GITHUB_ENV
+
+      - name: Enable XRDP
+        run: |
+          sudo systemctl enable xrdp
+          sudo systemctl restart xrdp
+
+      - name: Configure firewall for RDP
+        run: |
+          sudo ufw allow 3389/tcp || true
+          sudo ufw --force enable || true
+
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Establish Tailscale Connection
+        run: |
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-${{ github.run_id }}
+
+          for i in {1..10}; do
+            TSIP=$(tailscale ip -4)
+            [ -n "$TSIP" ] && break
+            sleep 5
+          done
+
+          if [ -z "$TSIP" ]; then
+            echo "Tailscale IP not assigned"
+            exit 1
+          fi
+
+          echo "TAILSCALE_IP=$TSIP" >> $GITHUB_ENV
+
+      - name: Verify RDP accessibility
+        run: |
+          nc -zv $TAILSCALE_IP 3389
+
+      - name: Maintain connection
+        run: |
+          echo ""
+          echo "=== RDP ACCESS ==="
+          echo "Address: $TAILSCALE_IP"
+          echo "Username: rdp"
+          echo "Password: $(echo $RDP_CREDS)"
+          echo "=================="
+          echo ""
+
+          while true; do
+            echo "[$(date)] RDP Active — Ctrl+C in workflow to stop"
+            sleep 300
+          done
