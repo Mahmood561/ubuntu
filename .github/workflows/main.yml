@@ -9,45 +9,46 @@ jobs:
     timeout-minutes: 3600
 
     steps:
-      - name: Install desktop and RDP
+      - name: Install minimal desktop + RDP
         run: |
           sudo apt update
-          sudo apt install -y xrdp xfce4 xfce4-goodies
-          echo "startxfce4" > ~/.xsession
+          sudo apt install -y xrdp lxde-core lxde-common tigervnc-standalone-server
+          echo "startlxde" > ~/.xsession
 
       - name: Create RDP user
         run: |
-          PASSWORD=$(openssl rand -base64 12)
+          PASS=$(openssl rand -base64 10)
           sudo useradd -m rdp
-          echo "rdp:$PASSWORD" | sudo chpasswd
+          echo "rdp:$PASS" | sudo chpasswd
           sudo usermod -aG sudo rdp
-          echo "RDP_PASS=$PASSWORD" >> $GITHUB_ENV
+          echo "RDP_PASS=$PASS" >> $GITHUB_ENV
 
-      - name: Enable XRDP
+      - name: Start XRDP
         run: |
-          sudo systemctl enable xrdp
           sudo systemctl restart xrdp
 
       - name: Install cloudflared
         run: |
-          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
           chmod +x cloudflared
-          sudo mv cloudflared /usr/local/bin/
+          sudo mv cloudflared /usr/local/bin/cloudflared
 
       - name: Start tunnel
         run: |
-          cloudflared tunnel --url rdp://localhost:3389 --no-autoupdate > tunnel.log 2>&1 &
+          cloudflared tunnel --url tcp://localhost:3389 --no-autoupdate > tunnel.log 2>&1 &
           sleep 5
           grep -o 'tcp://[^ ]*' tunnel.log | head -n 1 > tunnel.txt
 
       - name: Show access info
         run: |
-          echo "=== RDP ACCESS ==="
-          echo "Tunnel:"
+          echo ""
+          echo "==== RDP ACCESS ===="
+          echo "Address:"
           cat tunnel.txt
           echo "Username: rdp"
           echo "Password: $RDP_PASS"
-          echo "=================="
+          echo "===================="
+          echo ""
 
       - name: Keep alive
         run: |
