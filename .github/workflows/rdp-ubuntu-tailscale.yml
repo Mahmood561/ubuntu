@@ -12,7 +12,7 @@ jobs:
       - name: Install XRDP + lightweight desktop
         run: |
           sudo apt update
-          sudo apt install -y -qq xrdp lxde-core lxde-common tigervnc-standalone-server
+          sudo apt install -y -qq xrdp xorgxrdp lxde-core lxde-common tigervnc-standalone-server
           echo "startlxde" > ~/.xsession
 
       - name: Create RDP user
@@ -27,7 +27,9 @@ jobs:
         run: |
           sudo systemctl enable xrdp
           sudo systemctl restart xrdp
-          ss -tlnp | grep 3389 || (echo "XRDP not listening on 3389" && exit 1)
+          sudo systemctl restart xrdp-sesman
+          sleep 3
+          ss -tlnp | grep 3389 || (echo "XRDP not listening on 3389" && sudo systemctl status xrdp && exit 1)
 
       - name: Install Tailscale
         run: |
